@@ -1,0 +1,20 @@
+# Render Blueprint configuration for FraudShield AI
+# Documentation: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: fraudshield-ai
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RENDER
+        value: "true"
+      - key: GEMINI_API_KEY
+        sync: false
