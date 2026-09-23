@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "UserProfile": {
+      "collection": "users",
+      "fields": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string" },
+        "organization": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "lastLogin": { "type": "string" }
+      }
+    },
+    "UserCase": {
+      "collection": "users/{userId}/cases",
+      "fields": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string" },
+        "priority": { "type": "string" },
+        "primaryTransactionId": { "type": "string" },
+        "riskScore": { "type": "number" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "ChatSession": {
+      "collection": "users/{userId}/chats",
+      "fields": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "model": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "ChatMessage": {
+      "collection": "users/{userId}/chats/{chatId}/messages",
+      "fields": {
+        "id": { "type": "string" },
+        "sender": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "modelUsed": { "type": "string" }
+      }
+    },
+    "VoiceLog": {
+      "collection": "users/{userId}/voiceLogs",
+      "fields": {
+        "id": { "type": "string" },
+        "sessionStartTime": { "type": "string" },
+        "durationSeconds": { "type": "number" },
+        "summary": { "type": "string" },
+        "model": { "type": "string" }
+      }
+    }
+  }
+}

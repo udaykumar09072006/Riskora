@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && (request.auth.uid == userId || resource == null);
+      
+      match /cases/{caseId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+      match /alerts/{alertId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+      match /chats/{chatId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+        match /messages/{messageId} {
+          allow read, write: if isAuthenticated() && request.auth.uid == userId;
+        }
+      }
+      match /voiceLogs/{logId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+    }
+
+    // Default authenticated access for operational data
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

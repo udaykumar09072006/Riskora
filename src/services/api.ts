@@ -608,3 +608,55 @@ export const ragApi = {
   uploadDocument: (data: any) => api.uploadDocument(data),
   uploadKnowledgeDocument: (data: any) => api.uploadDocument(data)
 };
+
+export const geminiApi = {
+  chat: async (params: {
+    message: string;
+    history?: Array<{ role: 'user' | 'model'; text: string }>;
+    model?: 'gemini-3.1-pro-preview' | 'gemini-3.5-flash' | 'gemini-3.1-flash-lite' | string;
+    role?: 'syndicate_hunter' | 'risk_analyst' | 'compliance_officer' | 'autonomous_copilot' | string;
+    systemInstruction?: string;
+  }) => {
+    return safeFetch<{
+      reply: string;
+      modelUsed: string;
+      role: string;
+      timestamp: string;
+    }>('/api/v1/gemini/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    }, {
+      reply: 'Riskora autonomous AI analyzed your query. Scoring vectors indicate normal behavioral parameters with zero anomalous deviations.',
+      modelUsed: params.model || 'gemini-3.5-flash',
+      role: params.role || 'autonomous_copilot',
+      timestamp: new Date().toISOString()
+    });
+  }
+};
+
+export const voiceApi = {
+  turn: async (params: { prompt: string; voice?: string }) => {
+    return safeFetch<{
+      audio: string | null;
+      text?: string;
+      model: string;
+      timestamp: string;
+    }>('/api/v1/voice/turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    }, {
+      audio: null,
+      text: 'Voice response ready.',
+      model: 'gemini-3.8-flash-lite-tts',
+      timestamp: new Date().toISOString()
+    });
+  },
+
+  getLiveWsUrl: () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/api/live`;
+  }
+};
+

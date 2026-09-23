@@ -10,7 +10,9 @@ import {
   Cpu, 
   ThumbsUp, 
   Sliders, 
-  ShieldCheck 
+  ShieldCheck,
+  MessageSquare,
+  Headphones
 } from 'lucide-react';
 import { RiskoraLogo } from './RiskoraLogo';
 
@@ -38,6 +40,8 @@ export const Sidebar: React.FC<SidebarProps> = (props) => {
     { id: 'cases', label: 'Case Management', icon: Briefcase, count: casesCount, countColor: 'bg-amber-500/20 text-amber-300 border border-amber-500/30', category: 'OPERATIONS' },
     
     { id: 'investigation', label: 'Agent Investigation', icon: Bot, category: 'INTELLIGENCE' },
+    { id: 'chat', label: 'Gemini Chatbot', icon: MessageSquare, category: 'INTELLIGENCE' },
+    { id: 'voice', label: 'Voice Conversations', icon: Headphones, category: 'INTELLIGENCE' },
     { id: 'graph', label: 'Syndicate Graph', icon: Share2, category: 'INTELLIGENCE' },
     { id: 'rag', label: 'RAG Knowledge Base', icon: BookOpen, category: 'INTELLIGENCE' },
 

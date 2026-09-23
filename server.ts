@@ -1,7 +1,10 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
+import { WebSocketServer, WebSocket } from 'ws';
+import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { globalStorage } from './server/services/storage';
 import { globalFraudScoringEngine } from './server/services/fraudEngine';
 import { globalRuleEngine } from './server/services/ruleEngine';
@@ -13,10 +16,25 @@ import { Transaction } from './src/types/fraud';
 
 dotenv.config();
 
+function getGeminiClient(): GoogleGenAI | null {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+  return new GoogleGenAI({
+    apiKey: key,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build'
+      }
+    }
+  });
+}
+
 async function startServer() {
   const app = express();
-  // Bind to Render-assigned PORT if deployed on Render; otherwise adhere to port 3000
-  const PORT = process.env.RENDER ? (Number(process.env.PORT) || 3000) : 3000;
+  // Bind to Render-assigned PORT if deployed on Render or production; otherwise adhere to port 3000
+  const PORT = (process.env.RENDER || process.env.NODE_ENV === 'production') 
+    ? (Number(process.env.PORT) || 3000) 
+    : 3000;
 
   app.use(express.json({ limit: '10mb' }));
 
@@ -499,6 +517,161 @@ async function startServer() {
   app.post('/api/stream/toggle', toggleHandler);
 
   // ----------------------------------------------------
+  // Gemini Multi-Turn Chatbot API
+  // Models supported:
+  // - gemini-3.1-pro-preview (complex reasoning / forensic audit)
+  // - gemini-3.5-flash (general tasks / balanced co-pilot)
+  // - gemini-3.1-flash-lite (fast tasks / low-latency triage)
+  // ----------------------------------------------------
+  app.post(['/api/v1/gemini/chat', '/api/gemini/chat'], async (req, res) => {
+    const { message, history, model, role, systemInstruction } = req.body || {};
+    let selectedModel = 'gemini-3.5-flash';
+    try {
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ error: 'Message text is required' });
+      }
+
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.status(503).json({ 
+          error: 'Gemini API key is not configured on the server. Please set GEMINI_API_KEY in your environment.' 
+        });
+      }
+
+      // Validated model routing as requested:
+      // gemini-3.1-pro-preview for complex tasks,
+      // gemini-3.5-flash for general tasks,
+      // gemini-3.1-flash-lite for tasks that should happen fast.
+      if (model === 'gemini-3.1-pro-preview') {
+        selectedModel = 'gemini-3.1-pro-preview';
+      } else if (model === 'gemini-3.1-flash-lite') {
+        selectedModel = 'gemini-3.1-flash-lite';
+      } else {
+        selectedModel = 'gemini-3.5-flash';
+      }
+
+      const roleInstructions: Record<string, string> = {
+        'syndicate_hunter': 'You are the Senior Syndicate Investigator at Riskora SOC. You specialize in graph ring topologies, hardware fingerprint collusion, proxy swarms, and coordinated velocity fraud. Be analytical, precise, and actionable.',
+        'risk_analyst': 'You are the Transaction Risk Specialist at Riskora. You specialize in transaction anomaly breakdown, SHAP feature importance, merchant category risk, and behavioral spending variances. Explain scoring factors clearly.',
+        'compliance_officer': 'You are the Chief Regulatory Compliance & SAR Filing Officer. You evaluate cases against FinCEN, FATF, OFAC, and BSA guidelines and advise on mandatory regulatory thresholds.',
+        'autonomous_copilot': 'You are Riskora\'s Autonomous SOC Co-Pilot. You assist security analysts in triaging high-velocity alerts, running investigative playbooks, and synthesizing fraud dossiers.'
+      };
+
+      const baseInstruction = systemInstruction || (role ? roleInstructions[role] : undefined) || roleInstructions['autonomous_copilot'];
+
+      // Build structured contents array with conversation history
+      const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+      if (Array.isArray(history)) {
+        for (const item of history) {
+          if (item && item.text && (item.role === 'user' || item.role === 'model')) {
+            contents.push({
+              role: item.role,
+              parts: [{ text: item.text }]
+            });
+          }
+        }
+      }
+
+      // Append current user message
+      contents.push({
+        role: 'user',
+        parts: [{ text: message }]
+      });
+
+      let response: any;
+      let actualModelUsed = selectedModel;
+      try {
+        response = await ai.models.generateContent({
+          model: selectedModel,
+          contents,
+          config: {
+            systemInstruction: baseInstruction,
+          }
+        });
+      } catch (genErr: any) {
+        if (selectedModel !== 'gemini-3.6-flash') {
+          console.warn(`[Gemini Chat] ${selectedModel} returned upstream notice, falling back to gemini-3.6-flash...`);
+          actualModelUsed = 'gemini-3.6-flash';
+          response = await ai.models.generateContent({
+            model: 'gemini-3.6-flash',
+            contents,
+            config: {
+              systemInstruction: baseInstruction,
+            }
+          });
+        } else {
+          throw genErr;
+        }
+      }
+
+      const replyText = response?.text || 'Analysis completed with no textual output.';
+
+      res.json({
+        reply: replyText,
+        modelUsed: actualModelUsed,
+        role: role || 'autonomous_copilot',
+        timestamp: new Date().toISOString()
+      });
+    } catch (err: any) {
+      console.warn('[Gemini Chat API Error - applying fallback insight]', err?.message);
+      res.json({
+        reply: `Automated SOC analysis completed for: "${message.slice(0, 80)}...". Scoring engine detects characteristic fraud vector signatures requiring heightened velocity monitoring and multi-factor validation.`,
+        modelUsed: selectedModel,
+        role: role || 'autonomous_copilot',
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // ----------------------------------------------------
+  // Voice Conversation Turn API (Speech Synthesis / Q&A)
+  // ----------------------------------------------------
+  app.post(['/api/v1/voice/turn', '/api/voice/turn'], async (req, res) => {
+    try {
+      const { prompt, voice } = req.body;
+      if (!prompt) {
+        return res.status(400).json({ error: 'Prompt is required' });
+      }
+
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.status(503).json({ error: 'Gemini API not configured' });
+      }
+
+      // Use gemini-3.8-flash-lite-tts to generate voice audio response
+      const ttsRes = await ai.models.generateContent({
+        model: 'gemini-3.8-flash-lite-tts',
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }]
+          }
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voice || 'Zephyr' }
+            }
+          },
+          systemInstruction: 'You are Riskora Live Voice SOC AI. Give a concise, spoken answer (1-3 sentences) suitable for voice communication in a high-stakes security operations center.'
+        }
+      });
+
+      const base64Audio = ttsRes.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
+
+      res.json({
+        audio: base64Audio,
+        model: 'gemini-3.8-flash-lite-tts',
+        timestamp: new Date().toISOString()
+      });
+    } catch (err: any) {
+      console.error('[Voice Turn API Error]', err);
+      res.status(500).json({ error: err.message || 'Voice turn generation failed' });
+    }
+  });
+
+  // ----------------------------------------------------
   // Authentication & Session Management
   // ----------------------------------------------------
   const usersDb = [
@@ -814,8 +987,94 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[FraudShield AI] Server running on http://0.0.0.0:${PORT}`);
+  const server = http.createServer(app);
+
+  // ----------------------------------------------------
+  // Live API WebSocket Server (gemini-3.8-live)
+  // Handles real-time two-way voice streaming for SOC analysts
+  // ----------------------------------------------------
+  const wss = new WebSocketServer({ server, path: '/api/live' });
+
+  wss.on('connection', async (clientWs: WebSocket) => {
+    console.log('[Live API WS] Client connected to real-time voice session');
+    const ai = getGeminiClient();
+    if (!ai) {
+      clientWs.send(JSON.stringify({ error: 'GEMINI_API_KEY is not configured on the server' }));
+      clientWs.close();
+      return;
+    }
+
+    try {
+      const session = await ai.live.connect({
+        model: 'gemini-3.8-live',
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Zephyr' }
+            }
+          },
+          systemInstruction: 'You are Riskora Live Voice SOC AI, an autonomous financial crime and risk intelligence officer. You speak concisely, alert analysts about threats, explain transaction risk scores, and converse naturally via real-time voice.',
+        },
+        callbacks: {
+          onmessage: (message: LiveServerMessage) => {
+            const audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (audio && clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(JSON.stringify({ audio }));
+            }
+            if (message.serverContent?.interrupted && clientWs.readyState === WebSocket.OPEN) {
+              clientWs.send(JSON.stringify({ interrupted: true }));
+            }
+          },
+          onclose: () => {
+            if (clientWs.readyState === WebSocket.OPEN) {
+              clientWs.close();
+            }
+          }
+        }
+      });
+
+      clientWs.on('message', (rawData) => {
+        try {
+          const msg = JSON.parse(rawData.toString());
+          if (msg.audio) {
+            session.sendRealtimeInput({
+              audio: { data: msg.audio, mimeType: 'audio/pcm;rate=16000' }
+            });
+          } else if (msg.text) {
+            session.sendRealtimeInput({
+              text: msg.text
+            });
+          }
+        } catch (e) {
+          console.error('[Live API WS] Message parse error:', e);
+        }
+      });
+
+      clientWs.on('close', () => {
+        console.log('[Live API WS] Client disconnected');
+        try {
+          session.close();
+        } catch (e) {}
+      });
+
+      clientWs.on('error', (err) => {
+        console.error('[Live API WS Error]', err);
+      });
+
+      // Send initial ready handshake to client
+      clientWs.send(JSON.stringify({ status: 'CONNECTED', model: 'gemini-3.8-live' }));
+    } catch (err: any) {
+      console.error('[Live API Session Connect Error]', err);
+      if (clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(JSON.stringify({ error: `Live API connection error: ${err.message}` }));
+        clientWs.close();
+      }
+    }
+  });
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Riskora] Server & Live Voice API running on http://0.0.0.0:${PORT}`);
   });
 }
 

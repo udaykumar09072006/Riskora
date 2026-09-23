@@ -9,12 +9,16 @@ import { TransactionDetailModal } from './pages/TransactionDetailModal';
 import { AlertsPage } from './pages/AlertsPage';
 import { CaseManagement } from './pages/CaseManagement';
 import { InvestigationWorkflow } from './pages/InvestigationWorkflow';
+import { GeminiChatbot } from './components/GeminiChatbot';
+import { VoiceConversation } from './components/VoiceConversation';
 import { FraudGraphPage } from './pages/FraudGraphPage';
 import { KnowledgeBasePage } from './pages/KnowledgeBasePage';
 import { ModelEvaluationPage } from './pages/ModelEvaluationPage';
 import { AnalystFeedbackPage } from './pages/AnalystFeedbackPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { api } from './services/api';
+import { auth } from './services/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { Transaction } from './types/fraud';
 
 export default function App() {
@@ -32,6 +36,24 @@ export default function App() {
   // Badge counts
   const [alertCount, setAlertCount] = useState(0);
   const [caseCount, setCaseCount] = useState(0);
+
+  // Listen to Firebase Auth state for seamless user persistence
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
+      if (fbUser) {
+        setCurrentUser({
+          id: fbUser.uid,
+          name: fbUser.displayName || 'SOC Intelligence Officer',
+          email: fbUser.email,
+          photoURL: fbUser.photoURL,
+          title: 'Senior Fraud Operations Lead',
+          organization: 'Riskora Autonomous SOC Unit',
+          token: `fb_${fbUser.uid}`
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const fetchBadgeCounts = useCallback(async () => {
     try {
@@ -149,6 +171,14 @@ export default function App() {
               onBack={() => setActiveTab('cases')}
               onRefresh={fetchBadgeCounts}
             />
+          )}
+
+          {activeTab === 'chat' && (
+            <GeminiChatbot />
+          )}
+
+          {activeTab === 'voice' && (
+            <VoiceConversation />
           )}
 
           {activeTab === 'graph' && (
