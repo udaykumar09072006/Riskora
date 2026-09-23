@@ -3,6 +3,22 @@
 ### AI-Powered Real-Time Fraud Detection & Investigation Platform
 
 [Live Demo](https://riskora-3.onrender.com)
+## 📸 Project Screenshots
+
+### Dashboard
+![Riskora Dashboard](./1.png)
+
+### Fraud Analysis
+![Riskora Fraud Analysis](./2.png)
+
+### Risk Assessment
+![Riskora Risk Assessment](./3.png)
+
+### Investigation
+![Riskora Investigation](./4.png)
+
+### Analytics
+![Riskora Analytics](./5.png)
 
 Riskora AI is an intelligent fraud detection and investigation platform designed to identify suspicious transactions, analyze fraud patterns, and assist investigators with AI-powered insights.
 
